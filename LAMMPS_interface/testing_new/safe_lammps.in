@@ -1,0 +1,42 @@
+# Test Zero Overhead JAX-MTP Implementation
+units metal
+atom_style atomic
+boundary p p s
+
+# Read structure
+read_data bulk_ni3al_small.data
+replicate 3 3 3 
+# Set masses (Al and Ni) - Fixed mapping: type 0->1 (Al), type 1->2 (Ni)
+mass 2 26.98  # Al (type 0 in cfg -> type 1 in LAMMPS)
+mass 1 58.69  # Ni (type 1 in cfg -> type 2 in LAMMPS)
+
+neighbor 5.0 bin
+neigh_modify every 2 delay 10 check yes page 100000
+
+
+#pair_style jax/mtp_combo ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_16k.bin 16384 100
+#pair_style jax/mtp_direct ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_16k.bin 16384 100
+pair_style jax/mtp_zero_overhead_original ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_333.bin 2889 150 1
+#pair_style jax/mtp_zero_overhead_original ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_555.bin 13375 150
+#pair_style jax/mtp_zero_overhead ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_16k.bin 16384 100
+#pair_style jax/mtp_large_scale ../compilation/jax_functions_ultra_cuda/jax_potential_ultra_cuda_16k.bin 16384 100
+pair_coeff * *
+
+#fix relax all box/relax iso 0.0 vmax 0.001
+#minimize 1.0e-6 1.0e-8 1000 10000
+#unfix relax
+
+reset_timestep 0
+
+variable        temperature     equal   100
+fix 1 all npt temp ${temperature} ${temperature} 0.1 x 0 0 1 y 0 0 1
+#fix 1 all nvt temp ${temperature} ${temperature} 0.1
+
+# Output settings  
+thermo 1
+thermo_style custom step pe ke temp press vol atoms fmax fnorm cpu 
+
+# Run energy computation only
+run 100
+
+print "Zero overhead test complete!"
