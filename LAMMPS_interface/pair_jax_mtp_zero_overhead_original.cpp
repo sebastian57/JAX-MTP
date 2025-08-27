@@ -149,6 +149,11 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
   int nlocal = atom->nlocal;
   int newton_pair = force->newton_pair;
 
+  // DEBUGGING: Check Newton pair setting
+  if (debug_level >= DEBUG_BASIC && comm->me == 0 && total_calls < 3) {
+    utils::logmesg(lmp, "   Newton pair flag: {} (on=1, off=0)\n", newton_pair);
+  }
+
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
@@ -288,7 +293,7 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
       PROFILE_SCOPE(overhead_profiler.get(), "jax_computation");
       
       double total_energy = 0.0;
-      double virial[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      double dummy_virial[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // JAX still computes it but we ignore it
       double volume = domain->xprd * domain->yprd * domain->zprd;
       
       // Zero forces in persistent array (no allocation overhead)
@@ -372,7 +377,7 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
           volume,
           total_energy,
           persistent_forces_array,
-          virial
+          dummy_virial  // Don't use this result
         );
       } else {
         // Multi-batch processing - implement simple batching strategy
@@ -380,7 +385,7 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
           manager, jax_function_path, volume,
           main_batch_atoms, overflow_batch_atoms,
           atom_positions, atom_types_vec, neighbor_lists, neighbor_counts, neighbor_types_lists,
-          total_energy, persistent_forces_array, virial
+          total_energy, persistent_forces_array, dummy_virial
         );
       }
       
@@ -396,7 +401,7 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
         // Forces should be correct from JAX - no scaling needed
         double force_scale = 0.71;  // Scale: 2.95/4.15 = 0.71 to match MLIP2 reference
         // TEMPORARY: Was using 0.71 scaling to match MLIP2, but need to find root cause
-
+        
         // Bulk force application (eliminates loop overhead)
         for (int ii = 0; ii < natoms_actual; ii++) {
           int lammps_i = ilist[ii];
@@ -406,60 +411,49 @@ void PairJaxMTPZeroOverheadOriginal::compute(int eflag, int vflag)
         }
       }
       
-      // Add force validation (helps verify the fix worked)
-      if (total_calls <= 5 && debug_level >= DEBUG_DATA) {
-        // Collect neighbor counts for validation
-        std::vector<int> all_neighbor_counts(natoms_actual);
+      // Add neighbor data validation for stability debugging  
+      if (debug_level >= DEBUG_BASIC && comm->me == 0 && total_calls <= 3) {
+        utils::logmesg(lmp, "\n📊 NEIGHBOR DATA VALIDATION:\n");
+        utils::logmesg(lmp, "   LAMMPS neighbor lists: {} total neighbors\n", total_lammps_neighbors);
+        utils::logmesg(lmp, "   JAX processed neighbors: {} total neighbors\n", total_processed_neighbors);
+        utils::logmesg(lmp, "   Cutoff filtering: {:.2f}% interactions within {:.2f} Å cutoff\n", 
+                      (100.0 * total_processed_neighbors) / total_lammps_neighbors, cutoff);
+        
+        // Check for neighbor capacity issues
+        int max_neighbors_per_atom = 0;
+        int atoms_with_overflow = 0;
         for (int ii = 0; ii < natoms_actual; ii++) {
-          all_neighbor_counts[ii] = neighbor_counts[ii];
-        }
-        validate_force_corrections(natoms_actual, persistent_forces_array, all_neighbor_counts);
-      }
-      
-      // PHASE B2: Energy conservation checks and validation
-      if (comm->me == 0 && total_calls <= 10 && debug_level >= DEBUG_BASIC) {  // Only for first few steps
-        double energy_per_atom = total_energy / natoms_actual;
-        double energy_per_interaction = (total_processed_neighbors > 0) ? 
-                                        total_energy / total_processed_neighbors : 0.0;
-        
-        utils::logmesg(lmp, "\\n🔋 ENERGY VALIDATION:\\n");
-        utils::logmesg(lmp, "   Total energy: {:.6f} eV\\n", total_energy);
-        utils::logmesg(lmp, "   Energy per atom: {:.6f} eV/atom\\n", energy_per_atom);
-        utils::logmesg(lmp, "   Energy per interaction: {:.6f} eV/neighbor\\n", energy_per_interaction);
-        utils::logmesg(lmp, "   Interactions within {:.2f} Å cutoff: {}\\n", cutoff, total_processed_neighbors);
-        
-        // Energy reasonableness check
-        if (std::abs(energy_per_atom) > 20.0) {  // Typical MTP energies are -1 to -10 eV/atom
-          utils::logmesg(lmp, "   ⚠️  WARNING: Energy per atom seems unusually high!\\n");
+          max_neighbors_per_atom = std::max(max_neighbors_per_atom, neighbor_counts[ii]);
+          if (neighbor_counts[ii] >= max_neighbors) atoms_with_overflow++;
         }
         
-        // Cutoff-specific warnings
-        int filtered_out = total_lammps_neighbors - total_processed_neighbors;
-        if (filtered_out > 0) {
-          double filtered_percentage = (double)filtered_out / total_lammps_neighbors * 100.0;
-          utils::logmesg(lmp, "   📏 CUTOFF INFO: {:.1f}% of neighbors beyond {:.2f} Å cutoff\\n", 
-                        filtered_percentage, cutoff);
-          if (filtered_percentage > 50.0) {
-            utils::logmesg(lmp, "   💡 Consider increasing cutoff if energy accuracy is poor\\n");
-          }
+        utils::logmesg(lmp, "   Atoms with overflow: {} out of {}\n", atoms_with_overflow, natoms_actual);
+        utils::logmesg(lmp, "   Max neighbors per atom: {} (capacity: {})\n", max_neighbors_per_atom, max_neighbors);
+        
+        if (atoms_with_overflow > 0) {
+          utils::logmesg(lmp, "   ⚠️ WARNING: {} atoms exceed neighbor capacity!\n", atoms_with_overflow);
         }
       }
       
       if (eflag_global) eng_vdwl += total_energy;
       
-      // STRESS COMPUTATION: Let LAMMPS compute stress from forces (more reliable)
-      // JAX stress computation can be inconsistent, especially with neighbor boundary effects
-      // LAMMPS will automatically compute virial from the forces we provide
+      // IMPORTANT: JAX stress computation bypassed for stability
+      // LAMMPS computes virial stress directly from forces using virial_fdotr_compute()
+      // This ensures proper stress computation and simulation stability
       if (vflag_global) {
-        // Zero out virial - let LAMMPS compute it from forces via virial_fdotr_compute()
-        for (int i = 0; i < 6; i++) virial[i] = 0.0;
+        // Do NOT use JAX virial values - let LAMMPS compute from forces
+        // Clear/ignore the virial array from JAX
+        for (int i = 0; i < 6; i++) this->virial[i] = 0.0;
       }
+
+      // Force virial computation from forces regardless of vflag_fdotr
+      // This ensures LAMMPS computes stress from force-displacement products
+      if (vflag_fdotr) virial_fdotr_compute();
     }
   }
 
-  // Force LAMMPS to compute virial from forces regardless of vflag_fdotr setting
-  // This ensures proper stress calculation for NPT simulations
-  if (vflag) virial_fdotr_compute();
+  // Force LAMMPS to compute virial from forces only
+  virial_fdotr_compute();
   
   // Performance tracking
   auto compute_end = std::chrono::high_resolution_clock::now();
@@ -785,7 +779,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
         }
         
         double main_energy = 0.0;
-        double main_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        double dummy_main_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // JAX still computes it but we ignore it
         
         main_success = manager->call_jax_ultra_optimized(
             jax_function_path,
@@ -799,12 +793,12 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
             volume,
             main_energy,
             persistent_forces_array,  // Forces written directly to main array
-            main_stress
+            dummy_main_stress  // Don't use this result
         );
         
         if (main_success) {
             total_energy += main_energy;
-            for (int i = 0; i < 6; i++) stress[i] += main_stress[i];
+            // Do NOT accumulate JAX stress values - LAMMPS computes from forces
         }
     }
     
@@ -826,7 +820,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
             // Process overflow atom in chunks that fit max_neighbors
             int neighbors_processed = 0;
             double atom_energy = 0.0;
-            double atom_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            double dummy_atom_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // JAX still computes it but we ignore it
             
             // Zero forces for this atom initially
             for (int k = 0; k < 3; k++) {
@@ -858,7 +852,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
                 std::vector<const int*> chunk_neighbor_types_ptr = {chunk_neighbor_types.data()};
                 
                 double chunk_energy = 0.0;
-                double chunk_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                double dummy_chunk_stress[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // JAX still computes it but we ignore it
                 double** chunk_forces = &persistent_forces_array[main_batch_atoms.size() + i];
                 
                 bool chunk_success = manager->call_jax_ultra_optimized(
@@ -873,7 +867,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
                     volume,
                     chunk_energy,
                     chunk_forces,
-                    chunk_stress
+                    dummy_chunk_stress  // Don't use this result
                 );
                 
                 if (!chunk_success) {
@@ -883,7 +877,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
                 
                 // Accumulate results
                 atom_energy += chunk_energy;
-                for (int j = 0; j < 6; j++) atom_stress[j] += chunk_stress[j];
+                // Do NOT accumulate JAX stress values - LAMMPS computes from forces
                 
                 neighbors_processed += neighbors_in_chunk;
                 
@@ -895,7 +889,7 @@ bool PairJaxMTPZeroOverheadOriginal::process_multi_batch_system(
             
             if (overflow_success) {
                 total_energy += atom_energy;
-                for (int j = 0; j < 6; j++) stress[j] += atom_stress[j];
+                // Do NOT accumulate JAX stress values - LAMMPS computes from forces
             } else {
                 break;
             }

@@ -836,24 +836,17 @@ bool ZeroOverheadOriginalManager::call_jax_zero_overhead(
                   << forces_extraction_ms/atoms_to_copy << "ms/atom)" << std::endl;
 #endif
 
-        // Stress extraction
+        // IMPORTANT: JAX stress computation bypassed for stability
+        // LAMMPS computes virial stress directly from forces using virial_fdotr_compute()
+        // This ensures proper stress computation and simulation stability
+        
+        // Stress extraction - ignore JAX values and set to zero
         PyObject* stress_numpy = convert_to_numpy(stress_obj);
         if (stress_numpy && stress_numpy != Py_None && PyArray_Check(stress_numpy)) {
-            PyArrayObject* s_np = (PyArrayObject*)stress_numpy;
-            int s_size = (int)PyArray_SIZE(s_np);
-            int comps = std::min(6, s_size);
-            if (PyArray_TYPE(s_np) == NPY_FLOAT32) {
-                float* sdata = (float*)PyArray_DATA(s_np);
-                for (int i = 0; i < comps; ++i) stress[i] = (double)sdata[i];
-            } else {
-                double* sdata = (double*)PyArray_DATA(s_np);
-                for (int i = 0; i < comps; ++i) stress[i] = sdata[i];
-            }
-            for (int i = comps; i < 6; ++i) stress[i] = 0.0;
             Py_DECREF(stress_numpy);
-        } else {
-            for (int i = 0; i < 6; ++i) stress[i] = 0.0;
         }
+        // Always set stress to zero - LAMMPS will compute from forces
+        for (int i = 0; i < 6; ++i) stress[i] = 0.0;
 
         // Cleanup
         Py_XDECREF(energy_obj);
@@ -1046,16 +1039,16 @@ bool ZeroOverheadOriginalManager::call_jax_ultra_optimized(
             forces[i][0] = forces[i][1] = forces[i][2] = 0.0;
         }
 
-        // Extract stress using direct memory access
+        // IMPORTANT: JAX stress computation bypassed for stability
+        // LAMMPS computes virial stress directly from forces using virial_fdotr_compute()
+        // This ensures proper stress computation and simulation stability
+        
+        // Extract stress - ignore JAX values and set to zero
         if (PyArray_Check(ultra_stress_obj)) {
-            PyArrayObject* stress_array = (PyArrayObject*)ultra_stress_obj;
-            if (PyArray_TYPE(stress_array) == NPY_FLOAT64) {
-                double* stress_data = (double*)PyArray_DATA(stress_array);
-                int stress_size = (int)PyArray_SIZE(stress_array);
-                int components = std::min(6, stress_size);
-                std::memcpy(stress, stress_data, components * sizeof(double));
-            }
+            // JAX computed stress but we ignore it
         }
+        // Always set stress to zero - LAMMPS will compute from forces
+        for (int i = 0; i < 6; ++i) stress[i] = 0.0;
 
         auto result_processing_end = std::chrono::high_resolution_clock::now();
         double result_processing_ms = std::chrono::duration<double>(result_processing_end - result_processing_start).count() * 1000;

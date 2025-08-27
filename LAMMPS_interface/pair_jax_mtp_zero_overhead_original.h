@@ -29,6 +29,10 @@ class PairJaxMTPZeroOverheadOriginal : public Pair {
  public:
   PairJaxMTPZeroOverheadOriginal(class LAMMPS *);
   ~PairJaxMTPZeroOverheadOriginal() override;
+  
+  // IMPORTANT: JAX stress computation bypassed for stability
+  // LAMMPS computes virial stress directly from forces using virial_fdotr_compute()
+  // This ensures proper stress computation and simulation stability
   void compute(int, int) override;
   void settings(int, char **) override;
   void coeff(int, char **) override;
@@ -80,6 +84,7 @@ class PairJaxMTPZeroOverheadOriginal : public Pair {
   void initialize_persistent_arrays();
   
   // PHASE 2: Multi-batch processing for large systems
+  // NOTE: JAX stress computation bypassed - LAMMPS computes virial from forces
   bool process_multi_batch_system(
     ZeroOverheadOriginal::ZeroOverheadOriginalManager* manager, 
     const char* jax_function_path, double volume,
