@@ -79,14 +79,14 @@ def main():
     for level in levels:
         file = f'trained_mtps/{level}_trained.mtp'
         start_time = time.time()
-        if args.train4 == 'true':
+        if args.train == 'true':
             epoch_carry, epoch_losses, steps_performed, loss_history, val_loss_history = train(args.training_cfg, level, args.steps1, args.threshold_loss, args.min_steps, 
                                                                                                 args.lr_start, args.transition_steps, args.decay_rate, args.global_norm_clip, 
                                                                                                 min_dist = args.min_dist, max_dist = args.max_dist, scaling = args.scaling,
                                                                                                 species=species, pkl_file = args.pkl_file, pkl_file_val = args.pkl_file_val) 
             
             params = epoch_carry['params']
-        elif args.train5 == 'true':
+        elif args.train_minibatch == 'true':
             epoch_carry, epoch_losses, steps_performed, loss_history, val_loss_history = train_minibatch(args.training_cfg, level, args.batch_size, args.steps1, args.threshold_loss, 
                                                                                                 args.min_steps, args.lr_start, args.transition_steps, args.decay_rate, 
                                                                                                 args.global_norm_clip, min_dist=args.min_dist, max_dist=args.max_dist, scaling=args.scaling, 
