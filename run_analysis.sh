@@ -4,10 +4,10 @@ set -e
 PYTHON_EXE="python3" 
 SCRIPT_PATH="./motep_jax_analysis.py" 
 
-FOLDER_NAME="train4_subset_deep2_gpu" 
-RUN_NAME="train4_subset_deep2_gpu"
-OUTPUT_NAME="train4_subset_deep2_gpu_report"
-THRESHOLD_LOSS=3.2241e-06
+FOLDER_NAME="" 
+RUN_NAME=""
+OUTPUT_NAME="train_report"
+THRESHOLD_LOSS=1e-07
 MIN_STEPS=10
 LR_START=3e-1
 TRANSITION_STEPS=50
