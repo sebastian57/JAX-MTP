@@ -7,7 +7,7 @@ import numpy.typing as npt
 
 from ..data import MTPData
 
-from .moment_jax import MomentBasis
+from .moment import MomentBasis
 from .utils import TEST_R_UNITS, TEST_RB_VALUES, make_tensor
 
 # dict mapping MLIP moments count to level, used for conversion
