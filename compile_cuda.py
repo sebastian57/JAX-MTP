@@ -64,7 +64,7 @@ from motep_jax_train_import import *
 class CudaCompiler:
     """Compiler for ultra-optimized JAX MTP functions."""
     
-    def __init__(self, mtp_file, level=12):
+    def __init__(self, mtp_file, level=level):
         """
         Initialize the compiler.
         
@@ -437,6 +437,7 @@ def main():
     
     #mtp_file = input("Enter the full path to your .mtp file (including .mtp extension): ").strip()
     mtp_file = 'Ni3Al-12g.mtp'
+    level = 12
 
     if not os.path.exists(mtp_file):
         print(f"Error: File {mtp_file} not found")
@@ -446,7 +447,7 @@ def main():
         print("Warning: File does not have .mtp extension")
     
     try:
-        compiler = CudaCompiler(mtp_file)
+        compiler = CudaCompiler(mtp_file, level)
         results, performance, config_file = compiler.compile_suite(CONFIGS)
         
         print(f"\nCompilation completed!")
