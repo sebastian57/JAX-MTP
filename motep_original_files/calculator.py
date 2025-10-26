@@ -21,7 +21,7 @@ def make_mtp_engine(engine: str = "numpy") -> EngineBase:
 
         return JaxMTPEngine
     elif engine == "jax_new":
-        from .jax_engine.engine import JaxMTPEngine
+        from .jax_engine.engine_jax import JaxMTPEngine
         return JaxMTPEngine
     else:
         raise ValueError(engine)
@@ -71,14 +71,6 @@ class MTP(Calculator):
 
     def calculate_jax(self, itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, params):
         self.results = self.engine.calculate(itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, params)
-        
-        self.results["free_energy"] = self.results["energy"]
-        
-        return self.results
-    
-
-    def calculate_jax_new(self, itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, natoms_energy, natoms_force, params):
-        self.results = self.engine.calculate_new(itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, natoms_energy, natoms_force, params)
         
         self.results["free_energy"] = self.results["energy"]
         

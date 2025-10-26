@@ -5,8 +5,7 @@ from ..data import MTPData
 
 from .conversion import BasisConverter, moments_count_to_level_map
 from .jax import calc_energy_forces_stress as jax_calc
-#from .current_jax_file import calc_energy_forces_stress_padded_simple_ultra_optimized as jax_calc
-from .moment import MomentBasis
+from .moment_jax import MomentBasis
 
 import jax
 
@@ -69,6 +68,7 @@ class JaxMTPEngine(EngineBase):
             )            
             self.moment_basis.execution_order = tuple(execution_order)
 
+
     def calculate(self, itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, params):
         #self.update_neighbor_list(atoms)
         mtp_data = self.mtp_data
@@ -85,43 +85,6 @@ class JaxMTPEngine(EngineBase):
             all_jtypes,
             cell_rank,
             volume,
-            mtp_data.species,
-            mtp_data.scaling,
-            mtp_data.min_dist,
-            mtp_data.max_dist,
-            mtp_data.species_coeffs,
-            self.basis_converter.remapped_coeffs,
-            mtp_data.radial_coeffs,
-            # Static parameters:
-            self.moment_basis.execution_order,
-            tuple(self.moment_basis.scalar_contractions)
-        )
-        results = {}
-        results["energies"] = energies
-        results["energy"] = results["energies"].sum()
-        results["forces"] = forces
-        results["stress"] = stress
-        return results
-
-
-    def calculate_new(self, itypes, all_js, all_rijs, all_jtypes, cell_rank, volume, natoms_energy, natoms_force, params):
-        #self.update_neighbor_list(atoms)
-        mtp_data = self.mtp_data
-        
-        # set params for gradient computation
-        mtp_data.species_coeffs = params['species']
-        mtp_data.radial_coeffs = params['radial']
-        self.basis_converter.remapped_coeffs = params['basis']
-
-        energies, forces, stress = jax_calc(
-            itypes,
-            all_js,
-            all_rijs,
-            all_jtypes,
-            cell_rank,
-            volume,
-            natoms_energy,
-            natoms_force,
             mtp_data.species,
             mtp_data.scaling,
             mtp_data.min_dist,

@@ -45,6 +45,17 @@ def calc_energy_forces_stress(
     scalar_contractions
 ):
     
+    def fromtuple(x, dtype=jnp.float32):
+        """Convert nested tuple back to JAX array (reverse of totuple)"""
+        if isinstance(x, tuple):
+            return jnp.array([fromtuple(y, dtype) for y in x], dtype=dtype)
+        else:
+            return x
+    
+    species_coeffs =  fromtuple(species_coeffs)
+    moment_coeffs = fromtuple(moment_coeffs)
+    radial_coeffs = fromtuple(radial_coeffs)
+    
     local_energies, forces = _jax_calc_local_energy_and_derivs(
         all_rijs,
         itypes,
