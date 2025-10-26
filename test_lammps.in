@@ -1,0 +1,41 @@
+# ---------- Initialize Simulation ---------------------
+units           metal
+dimension       3
+boundary        p p p
+atom_style      atomic
+
+read_data       bulk_ni3al_small.data
+mass 1 26.98  # Al
+mass 2 58.69  # Ni
+replicate   3 3 3
+reset_atoms id
+
+# ---------- Define Interatomic Potential ---------------------
+pair_style jax/mtp compiled_potentials/jaxmtp_potential_cuda_2889_60.bin 2889 60 5.0 0
+pair_coeff * *
+
+neighbor 1.5 bin  
+neigh_modify every 1 delay 5 check yes
+
+######################################
+variable        temperature     equal   100      # Kelvin
+
+# ------------------------- SETTINGS ---------------------------------
+compute csym all centro/atom fcc
+compute peratom all pe/atom
+
+fix test all box/relax x 0 y 0
+minimize 1.0e-4 1.0e-6 100 1000
+unfix test
+
+fix 1 all nvt temp ${temperature} ${temperature} 0.1
+
+thermo         1
+thermo_style   custom step temp vol pe ke etotal
+dump xyz_dump all xyz 50 trajectory.dump
+
+run 10
+
+# Clean output
+print "All Done!"
+print "Trajectory written to trajectory.dump"
