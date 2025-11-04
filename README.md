@@ -1,6 +1,9 @@
 # JAX-MTP 
 A Python implementation of the Moment Tensor Potential model with a custom pair-style LAMMPS interface and training code. JAX represents the main backbone of the code and allows for efficient computation on GPU hardware. <br>
-Initial inspiration for the JAX backend code was provided by https://github.com/imw-md/motep.git. 
+Initial inspiration for the JAX backend code was provided by https://github.com/imw-md/motep.git. <br>
+Testing/Validation was performed using trained potentials provided by:
+-  Acta Materialia 281 (2024) 120423
+-  Acta Materialia 297 (2025) 121319
 
 ## General Setup for LAMMPS Simulations
 ### Step 1: Python venv
@@ -44,4 +47,5 @@ Determine system size and find trained .mtp file
 - Fix pressure for NPT
 - Add Kokkos to pair-style
 - Maybe PJRT Api for full C++ support
+
 
